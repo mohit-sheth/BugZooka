@@ -29,7 +29,12 @@ from bugzooka.integrations.inference import (
     InferenceAPIUnavailableError,
     AgentAnalysisLimitExceededError,
 )
-from typing import Dict, Tuple, Optional, List
+from bugzooka.core.utils import (
+    select_matching_job_message,
+    to_job_history_url,
+    fetch_job_history_stats,
+)
+from typing import Dict, Tuple, Optional, List, Any
 
 
 class SlackMessageFetcher:
@@ -88,6 +93,86 @@ class SlackMessageFetcher:
             }
 
         return [header_block, content_block]
+
+    def _handle_job_history(
+        self,
+        query_substr: str,
+        thread_ts: str,
+        current_message: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Find the latest job message matching the query, convert its View URL to
+        job-history URL, fetch metadata, and post a response.
+
+        Returns the thread timestamp used for posting.
+        """
+        try:
+            # Search recent messages for a match
+            hist = self.client.conversations_history(channel=self.channel_id, limit=200)
+            messages = hist.get("messages", [])
+
+            # Include current message if provided
+            if current_message:
+                messages = [current_message] + messages
+
+            matched, view_url, job_name = select_matching_job_message(
+                messages=messages, query_substr=query_substr, exclude_ts=thread_ts
+            )
+
+            if not matched:
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text=f"No matching job found for substring '{query_substr}'.",
+                    thread_ts=thread_ts,
+                )
+                return thread_ts
+
+            if not view_url:
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text="Couldn't extract job URL from the matched message.",
+                    thread_ts=thread_ts,
+                )
+                return thread_ts
+
+            # Convert to job-history URL
+            job_history_url = to_job_history_url(view_url)
+
+            # Fetch job-history stats
+            (
+                failure_count,
+                total_count,
+                failure_rate,
+                status_emoji,
+            ) = fetch_job_history_stats(job_history_url)
+
+            # Prepare Slack message
+            header = ":prow: *Job History*\n"
+            body_lines = [
+                f"URL: <{job_history_url}|Open Job History>",
+                f"Job Name: {job_name}",
+                f"Failures: {failure_count} / {total_count}  ({failure_rate:.0f}%)  {status_emoji}",
+            ]
+            message_block = self._get_slack_message_blocks(
+                markdown_header=header,
+                content_text="\n".join(body_lines),
+                use_markdown=True,
+            )
+
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Job history",
+                blocks=message_block,
+                thread_ts=thread_ts,
+            )
+        except Exception as e:
+            self.logger.error("job-history command failed: %s", e)
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Failed to fetch job history.",
+                thread_ts=thread_ts,
+            )
+        return thread_ts
 
     def _filter_new_messages(self, messages):
         """Filter messages to only include new ones that haven't been processed."""
@@ -284,12 +369,24 @@ class SlackMessageFetcher:
 
                     counts[category] = counts.get(category, 0) + 1
                     if v:
+                        # Try to fetch permalink for this Slack message
+                        permalink = None
+                        try:
+                            pl_resp = self.client.chat_getPermalink(
+                                channel=self.channel_id, message_ts=msg.get("ts")
+                            )
+                            permalink = pl_resp.get("permalink")
+                        except Exception:
+                            permalink = None
+                        message_with_link = (
+                            f"{text} -- <{permalink}|Permalink>" if permalink else text
+                        )
                         version_type_counts.setdefault(v, {})[category] = (
                             version_type_counts.setdefault(v, {}).get(category, 0) + 1
                         )
                         version_type_messages.setdefault(v, {}).setdefault(
                             category, []
-                        ).append(text)
+                        ).append(message_with_link)
 
             if not response.get("has_more"):
                 break
@@ -316,9 +413,17 @@ class SlackMessageFetcher:
         text_lower = text.lower()
 
         self.logger.info(f"📩 New message from {user}: {text} at ts {ts}")
+        # job-history <substring> command
+        jh = re.fullmatch(r"job-history\s+(.+)", text_lower.strip())
+        if jh:
+            query_substr = jh.group(1).strip().lower()
+            self.logger.debug("Query substring: %s", query_substr)
+            return self._handle_job_history(query_substr, ts, current_message=msg)
 
         # Dynamic summarize trigger: summarize <time> (e.g., 20m, 1h, 2d)
-        m = re.search(r"\b(?:summarise|summarize)\b\s+(\d+)([mhd])", text_lower)
+        m = re.fullmatch(
+            r"(?:summarise|summarize)\s+(\d+)([mhd])(?:\s+verbose)?", text_lower
+        )
         if m:
             value, unit = m.group(1), m.group(2)
             factor = {"m": 60, "h": 3600, "d": 86400}[unit]
@@ -355,6 +460,9 @@ class SlackMessageFetcher:
         self._send_error_logs_preview(
             errors_list, categorization_message, ts, is_install_issue
         )
+
+        # Add job-history info in the thread after the preview
+        self._handle_job_history(query_substr=text, thread_ts=ts, current_message=msg)
 
         if is_install_issue or not enable_inference:
             return ts

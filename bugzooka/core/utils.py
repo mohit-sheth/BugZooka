@@ -2,24 +2,36 @@ import logging
 import re
 import subprocess
 from bugzooka.core.constants import TOP_N_ERRROS
+from typing import Iterable, Optional, Tuple
+import requests
 
 logger = logging.getLogger(__name__)
 
 
-def extract_job_details(text):
+def extract_job_details(text: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Extract the name and hyperlink (URL).
+    Extract the job URL and job name from a Slack message.
+    Handles Slack-style links and trailing emojis/punctuation.
 
-    :param text: message text in slack
-    :return: job link and the job name
+    :param text: message text in Slack
+    :return: (job_url, job_name) or (None, None) if not found
     """
     try:
-        URL_PATTERN = re.compile(r"(https://[^\s|]+)")
-        url_match = URL_PATTERN.search(text)
-        name_match = re.search(r"Job\s+\*?(.+?)\*?\s+ended", text)
-        if url_match and name_match:
-            return url_match.group(0), name_match.group(1)
-        return None, None
+        logger.info("Extracting job details from text: %s", text)
+        # Convert Slack-style links <https://url|text> to plain URL
+        text_for_url = re.sub(r"<(https://[^>|]+)\|[^>]+>", r"\1", text)
+
+        # Match a URL until whitespace or non-URL-safe trailing chars
+        url_pattern = re.compile(r"https://[^\s:_]+(?:/[^\s:_]*)*")
+        url_match = url_pattern.search(text_for_url)
+
+        # Match job name pattern like: "Job <name> ended"
+        name_match = re.search(r"Job\s+\*?(.+?)\*?\s+ended", text_for_url, re.I)
+
+        job_url: Optional[str] = url_match.group(0) if url_match else None
+        job_name: Optional[str] = name_match.group(1) if name_match else None
+
+        return job_url, job_name
     except Exception as e:
         logger.error("Failure in extracting job details: %s", e)
         return None, None
@@ -133,3 +145,84 @@ def filter_most_frequent_errors(full_errors, frequent_errors):
 def str_to_bool(value):
     """Convert string to bool."""
     return str(value).lower() == "true"
+
+
+def to_job_history_url(view_url: str) -> str:
+    """
+    Convert a Prow 'view' URL to a 'job-history' URL.
+
+    Rules:
+    - Replace '/view/' with '/job-history/'
+    - Remove the trailing run ID ('/<digits>')
+    - Keep everything else intact
+    """
+    try:
+        if "/view/" not in view_url:
+            return view_url
+        # Replace the first occurrence of '/view/' with '/job-history/'
+        job_history = view_url.replace("/view/", "/job-history/", 1)
+        # Remove trailing run id (digits) at the end of URL
+        job_history = re.sub(r"/(\d+)$", "", job_history)
+        return job_history
+    except Exception:
+        return view_url
+
+
+def select_matching_job_message(
+    messages: Iterable[dict],
+    query_substr: str,
+    exclude_ts: Optional[str] = None,
+) -> Tuple[Optional[dict], Optional[str], Optional[str]]:
+    """
+    Given Slack messages, find the first one that:
+    - (optionally) is not the current command/thread ts
+    - contains the word 'job'
+    - contains the query_substr (case-insensitive)
+    - and from which we can extract a valid (view_url, job_name)
+
+    Returns: (matched_message, view_url, job_name) or (None, None, None)
+    """
+    lowered_query = (query_substr or "").lower()
+    for message in messages:
+        text = message.get("text", "")
+        ts_val = message.get("ts")
+        if exclude_ts and ts_val == exclude_ts:
+            continue
+        text_lower = text.lower()
+        if "job" not in text_lower:
+            continue
+        if lowered_query not in text_lower:
+            continue
+        view_url, job_name = extract_job_details(text)
+        if view_url and job_name:
+            return message, view_url, job_name
+    return None, None, None
+
+
+def fetch_job_history_stats(job_history_url: str) -> Tuple[int, int, int, str]:
+    """
+    Fetch the job history page and compute failure stats and a status emoji.
+
+    Returns: (failure_count, total_count, failure_rate_percent, status_emoji)
+    """
+    failure_count = 0
+    total_count = 0
+    try:
+        resp = requests.get(job_history_url, timeout=10)
+        if resp.ok:
+            page_html = resp.text
+            failure_count = len(re.findall(r"FAILURE|Failure|failed", page_html))
+            total_count = len(re.findall(r"ID", page_html))
+    except Exception as e:
+        logger.warning("Failed to fetch job history page: %s", e)
+
+    failure_rate = int((failure_count / total_count * 100) if total_count else 0)
+    if failure_rate == 0:
+        status_emoji = ":large_green_circle:"
+    elif failure_rate < 50:
+        status_emoji = ":grey_exclamation:"
+    elif failure_rate < 100:
+        status_emoji = ":red_circle:"
+    else:
+        status_emoji = ":alert-siren:"
+    return failure_count, total_count, failure_rate, status_emoji

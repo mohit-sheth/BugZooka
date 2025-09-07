@@ -19,10 +19,10 @@ UNAVAILABLE_REASON_TEXT = "The inference API is currently unavailable."
 
 def _validate_message_blocks(message, expected_count, message_type):
     """Helper function to validate message block structure."""
-    blocks = message.get("blocks", [])
-    assert len(blocks) == expected_count, (
-        f"{message_type} message should have {expected_count} blocks, got {len(blocks)}"
-    )
+    blocks = message.get("blocks") or []
+    assert (
+        len(blocks) == expected_count
+    ), f"{message_type} message should have {expected_count} blocks, got {len(blocks)}"
     return blocks
 
 
@@ -38,9 +38,9 @@ def _get_nested_block_text(block):
 
 def _validate_block_content(block_text, expected_content, block_description):
     """Helper function to validate block content."""
-    assert expected_content in block_text, (
-        f"{block_description} should contain '{expected_content}', got: {block_text[:100]}..."
-    )
+    assert (
+        expected_content in block_text
+    ), f"{block_description} should contain '{expected_content}', got: {block_text[:100]}..."
 
 
 def verify_slack_messages(
@@ -50,10 +50,12 @@ def verify_slack_messages(
     Verify that error messages were processed correctly with specific message patterns.
 
     Expected message patterns:
-    - First message: Always starts with "Error Logs Preview"
-    - If inference disabled: Only the first message should be present
-    - If inference enabled and available: Second message blocks contain "Implications to understand (AI generated)"
-    - If inference enabled but unavailable: Second message text is "Analysis Unavailable"
+    - First message: Always "Error Logs Preview"
+    - Second message: Always "Job History Link"
+    - If inference disabled: Only these two messages should be present
+    - If inference enabled and available: Third message blocks contain
+      "Implications to understand (AI generated)"
+    - If inference enabled but unavailable: Third message text is "Analysis Unavailable"
 
     Args:
         posted_messages (list): Messages posted to Slack
@@ -63,20 +65,20 @@ def verify_slack_messages(
     Raises:
         AssertionError: If verification fails
     """
-    expected_count = 2 if inference_enabled else 1
+    expected_count = 3 if inference_enabled else 2  # +1 for job-history message
 
-    assert len(posted_messages) == expected_count, (
-        f"Expected {expected_count} posted messages, got {len(posted_messages)}"
-    )
+    assert (
+        len(posted_messages) == expected_count
+    ), f"Expected {expected_count} posted messages, got {len(posted_messages)}"
 
     # Verify all messages are posted to correct channel and threaded properly
     for msg in posted_messages:
-        assert msg["channel"] == CHANNEL_ID, (
-            f"Message should be posted to channel {CHANNEL_ID}, got {msg['channel']}"
-        )
-        assert msg["thread_ts"] == THREAD_TS_1, (
-            "Message should be threaded to the error message"
-        )
+        assert (
+            msg["channel"] == CHANNEL_ID
+        ), f"Message should be posted to channel {CHANNEL_ID}, got {msg['channel']}"
+        assert (
+            msg["thread_ts"] == THREAD_TS_1
+        ), "Message should be threaded to the error message"
 
     # Validate first message - Error Logs Preview
     first_message = posted_messages[0]
@@ -92,13 +94,14 @@ def verify_slack_messages(
     second_block_text = _get_nested_block_text(blocks[1])
     assert len(second_block_text) > 0, "Error Logs Preview should have text"
 
-    # Handle second message only if inference is enabled
+    # Handle analysis message - it's at index 1 if inference disabled (no job-history), index 2 if inference enabled (with job-history)
     if not inference_enabled:
         return
 
-    second_message = posted_messages[1]
+    analysis_message_index = 2 if inference_enabled else 1
+    analysis_message = posted_messages[analysis_message_index]
     blocks = _validate_message_blocks(
-        second_message,
+        analysis_message,
         EXPECTED_MESSAGE_BLOCKS_COUNT,
         "Implications summary" if inference_available else "Unavailable",
     )
