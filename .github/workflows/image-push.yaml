@@ -1,36 +1,48 @@
 name: Image Push
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches:
       - master
       - main
+    tags:
+      - "*"
+  release:
+    types: [published]
 
 jobs:
-  build:
-    name: Image Push
+  image-push:
     runs-on: ubuntu-latest
-
+    outputs:
+      image: ${{ steps.set-image.outputs.image }}
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Build BugZooka Image
-      id: build-bugzooka
-      uses: redhat-actions/buildah-build@v2
-      with:
-        image: bugzooka 
-        context: .
-        tags: latest ${{ github.sha }}
-        containerfiles: |
-          ./Dockerfile
+      - name: Decide Image Name
+        id: set-image
+        run: |
+          if [[ "${{ github.event_name }}" == "release" && "${{ github.event.action }}" == "published" ]]; then
+            echo "image=bugzooka" >> $GITHUB_OUTPUT
+          else
+            echo "image=bugzooka-dev" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Push bugzooka image to quay.io
-      id: push-bugzooka-to-quay
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      uses: redhat-actions/push-to-registry@v2
-      with:
-        image: ${{ steps.build-bugzooka.outputs.image }}
-        tags: ${{ steps.build-bugzooka.outputs.tags }}
-        registry: quay.io/redhat-performance
-        username: ${{ secrets.QUAY_USER }}
-        password: ${{ secrets.QUAY_TOKEN }}
+      - name: Build BugZooka Image
+        id: build
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ steps.set-image.outputs.image }}
+          context: .
+          tags: latest ${{ github.sha }}
+          containerfiles: |
+            ./Dockerfile
+
+      - name: Push BugZooka Image
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build.outputs.image }}
+          tags: ${{ steps.build.outputs.tags }}
+          registry: quay.io/redhat-performance
+          username: ${{ secrets.QUAY_USER }}
+          password: ${{ secrets.QUAY_TOKEN }}

@@ -1,4 +1,5 @@
 FAILURE_KEYWORDS = {
+    "install": ("Install", "installation failure"),
     "provision": ("Provision", "provision failure"),
     "deprovision": ("Deprovision", "deprovision failure"),
     "gather": ("Must Gather", "must gather failure"),

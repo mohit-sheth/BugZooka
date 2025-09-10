@@ -53,9 +53,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /bin/bash appuser
-
 # Copy Python packages from builder stage
 COPY --from=builder /app-packages /app-packages
 
@@ -68,13 +65,15 @@ COPY --from=builder /usr/bin/gsutil /usr/bin/gsutil
 COPY --from=builder /usr/local/bin/logjuicer /usr/local/bin/logjuicer
 
 # Create /app directory and change ownership
-RUN mkdir -p /app && chown appuser:appuser /app
+RUN mkdir -p /app /data /logs /tmp /.config /.gsutil \
+    && chgrp -R 0 /app /data /logs /tmp /.config /.gsutil  \
+    && chmod -R g+rwX /app /data /logs /tmp /.config /.gsutil
 
 # Set working directory
 WORKDIR /app
 
 # Copy source code (do this last for better layer caching)
-COPY --chown=appuser:appuser . .
+COPY . .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -83,7 +82,7 @@ ENV PYTHONPATH="/app-packages:$PYTHONPATH"
 ENV PATH="/usr/lib/google-cloud-sdk/bin:/app-packages/bin:$PATH"
 
 # Switch to non-root user
-USER appuser
+USER 1001
 
 # Default command
 CMD ["python3", "bugzooka/entrypoint.py"]

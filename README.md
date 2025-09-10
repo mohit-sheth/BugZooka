@@ -132,6 +132,18 @@ make podman-build
 make podman-run  # Requires .env file in project root
 ```
 
+### **Openshift Deployment**
+```bash
+# Expose your ENVs and deploy resources
+export QUAY_CRED='<base64 encoded pull secret>'
+export BUGZOOKA_IMAGE='<image tag>'
+export BUGZOOKA_NAMESPACE='<your namespace>'
+kustomize build ./kustomize | envsubst | oc apply -f -
+
+# Cleanup resources
+kustomize build ./kustomize | envsubst | oc delete -f -
+```
+
 ## **Development**
 
 ### **Project Structure**

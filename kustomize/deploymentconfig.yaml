@@ -1,0 +1,65 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: bugzooka
+  namespace: ${BUGZOOKA_NAMESPACE}
+  labels:
+    app: ${BUGZOOKA_NAMESPACE}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    app: ${BUGZOOKA_NAMESPACE}
+    deploymentconfig: bugzooka
+  strategy:
+    type: Rolling
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - bugzooka
+        from:
+          kind: ImageStreamTag
+          name: bugzooka:latest
+          namespace: ${BUGZOOKA_NAMESPACE}
+  template:
+    metadata:
+      labels:
+        app: ${BUGZOOKA_NAMESPACE}
+        deploymentconfig: bugzooka
+    spec:
+      containers:
+        - name: bugzooka
+          securityContext:
+            allowPrivilegeEscalation: false
+          image: bugzooka:latest
+          imagePullPolicy: IfNotPresent
+          args: []
+          env:
+            - name: PRODUCT
+              value: "openshift"
+            - name: CI
+              value: "prow"
+          envFrom:
+            - secretRef:
+                name: bugzooka-env
+          volumeMounts:
+            - name: prompts
+              mountPath: /app/prompts.json
+              subPath: prompts.json
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: prompts
+          configMap:
+            name: bugzooka-prompts
+            items:
+              - key: prompts.json
+                path: prompts.json
