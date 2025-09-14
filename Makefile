@@ -34,6 +34,9 @@ clean:  ## Clean cache and temporary files
 run:  ## Run BugZooka (requires --product and --ci arguments)
 	PYTHONPATH=. python bugzooka/entrypoint.py $(ARGS)
 
+slack-commands:  ## Run Slack slash commands server (Socket Mode)
+	PYTHONPATH=. python -m bugzooka.integrations.slack_commands
+
 podman-build:  ## Build podman image
 	podman build -t bugzooka:latest .
 

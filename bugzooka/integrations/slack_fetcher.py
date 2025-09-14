@@ -3,6 +3,7 @@ import signal
 import sys
 import time
 import re
+import threading
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -51,8 +52,9 @@ class SlackMessageFetcher:
         self.client = WebClient(token=self.slack_bot_token)
         self.running = True  # Control flag for loop
 
-        # Handle SIGINT (Ctrl+C) for graceful exit
-        signal.signal(signal.SIGINT, self.shutdown)
+        # Handle SIGINT (Ctrl+C) for graceful exit only in main thread
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self.shutdown)
 
     def _get_slack_message_blocks(
         self, markdown_header, content_text, use_markdown=False
