@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff9800"/>
+      <stop offset="100%" style="stop-color:#ffb74d"/>
+    </linearGradient>
+  </defs>
+  <!-- Bug body -->
+  <ellipse cx="32" cy="36" rx="14" ry="16" fill="url(#g)"/>
+  <!-- Bug head -->
+  <circle cx="32" cy="18" r="8" fill="url(#g)"/>
+  <!-- Antennae -->
+  <line x1="28" y1="12" x2="20" y2="4" stroke="#ffb74d" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="36" y1="12" x2="44" y2="4" stroke="#ffb74d" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="20" cy="4" r="2.5" fill="#ffb74d"/>
+  <circle cx="44" cy="4" r="2.5" fill="#ffb74d"/>
+  <!-- Legs -->
+  <line x1="20" y1="28" x2="10" y2="24" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"/>
+  <line x1="20" y1="36" x2="10" y2="36" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"/>
+  <line x1="20" y1="44" x2="10" y2="48" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"/>
+  <line x1="44" y1="28" x2="54" y2="24" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"/>
+  <line x1="44" y1="36" x2="54" y2="36" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"/>
+  <line x1="44" y1="44" x2="54" y2="48" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"/>
+  <!-- Magnifier circle -->
+  <circle cx="40" cy="44" r="10" fill="none" stroke="#0a0e17" stroke-width="3"/>
+  <circle cx="40" cy="44" r="10" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+  <!-- Magnifier handle -->
+  <line x1="47" y1="51" x2="56" y2="60" stroke="#0a0e17" stroke-width="4" stroke-linecap="round"/>
+  <line x1="47" y1="51" x2="56" y2="60" stroke="rgba(255,255,255,0.3)" stroke-width="3" stroke-linecap="round"/>
+</svg>
